@@ -1,0 +1,77 @@
+name: mirror
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Sync only the mirror with this name (blank = all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrix
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          matrix=$(jq -c --arg only "$ONLY" '
+            map(select(.enabled != false))
+            | map(select($only == "" or .name == $only))
+            | map(.refs //= ["refs/heads/*", "refs/tags/*"])
+          ' mirrors.json)
+          echo "Mirrors: $matrix"
+          if [ "$matrix" = "[]" ]; then
+            echo "::error::No mirrors selected"
+            exit 1
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  sync:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mirror: ${{ fromJson(needs.plan.outputs.matrix) }}
+    concurrency: mirror-${{ matrix.mirror.name }}
+    name: sync (${{ matrix.mirror.name }})
+    steps:
+      - name: Clone source
+        env:
+          SOURCE: ${{ matrix.mirror.source }}
+        run: git clone --bare "$SOURCE" src
+
+      - name: Push to GitHub
+        working-directory: src
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          TARGET: ${{ matrix.mirror.target }}
+          REFS: ${{ join(matrix.mirror.refs, ' ') }}
+        run: |
+          refspecs=()
+          for r in $REFS; do refspecs+=("+$r:$r"); done
+          # "+" forces updates so upstream force-pushes are mirrored; refs/pull/*
+          # are skipped because GitHub rejects pushes to them.
+          git push --prune \
+            "https://x-access-token:${MIRROR_TOKEN}@github.com/${TARGET}.git" \
+            "${refspecs[@]}"
+
+  keepalive:
+    # Scheduled workflows are disabled after 60 days without repo activity.
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable mirror.yml --repo "$GITHUB_REPOSITORY"

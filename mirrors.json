@@ -1,0 +1,7 @@
+[
+  {
+    "name": "forgejo-helm",
+    "source": "https://code.forgejo.org/forgejo-helm/forgejo-helm.git",
+    "target": "joshtgl/forgejo-helm"
+  }
+]
