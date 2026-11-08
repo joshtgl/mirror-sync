@@ -28,6 +28,7 @@ jobs:
             map(select(.enabled != false))
             | map(select($only == "" or .name == $only))
             | map(.refs //= ["refs/heads/*", "refs/tags/*"])
+            | map(.token_secret //= "MIRROR_TOKEN")
           ' mirrors.json)
           echo "Mirrors: $matrix"
           if [ "$matrix" = "[]" ]; then
@@ -54,10 +55,15 @@ jobs:
       - name: Push to GitHub
         working-directory: src
         env:
-          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          MIRROR_TOKEN: ${{ secrets[matrix.mirror.token_secret] }}
+          TOKEN_SECRET: ${{ matrix.mirror.token_secret }}
           TARGET: ${{ matrix.mirror.target }}
           REFS: ${{ join(matrix.mirror.refs, ' ') }}
         run: |
+          if [ -z "$MIRROR_TOKEN" ]; then
+            echo "::error::Secret $TOKEN_SECRET is not set"
+            exit 1
+          fi
           refspecs=()
           for r in $REFS; do refspecs+=("+$r:$r"); done
           # "+" forces updates so upstream force-pushes are mirrored; refs/pull/*

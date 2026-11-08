@@ -15,7 +15,8 @@ upstream are reproduced as-is — treat mirror repos as read-only.
   {
     "name": "forgejo-helm",
     "source": "https://code.forgejo.org/forgejo-helm/forgejo-helm.git",
-    "target": "joshtgl/forgejo-helm"
+    "target": "forgejo-helm-mirror/forgejo-helm",
+    "token_secret": "FORGEJO_HELM_MIRROR_TOKEN"
   }
 ]
 ```
@@ -27,14 +28,22 @@ upstream are reproduced as-is — treat mirror repos as read-only.
 | `target`  | yes      | GitHub `owner/repo` to push to. |
 | `refs`    | no       | Ref patterns to mirror. Default `["refs/heads/*", "refs/tags/*"]`. |
 | `enabled` | no       | Set to `false` to pause a mirror without removing it. |
+| `token_secret` | no  | Name of the Actions secret holding the push token. Default `MIRROR_TOKEN`. |
 
 ## One-time setup
 
-1. Create a **fine-grained personal access token** with access to the mirror
-   repositories and these repository permissions:
+Fine-grained tokens belong to a single resource owner (user or org), so use
+one token per owner and point each mirror at it with `token_secret`.
+
+1. Create a **fine-grained personal access token** with **Resource owner** set
+   to the mirrors' org (e.g. `forgejo-helm-mirror`), access to **All
+   repositories**, and these repository permissions:
    - **Contents:** Read and write
    - **Workflows:** Read and write (required if upstream contains `.github/workflows/*`)
-2. Add it to this repository as the Actions secret **`MIRROR_TOKEN`**.
+2. Add it to this repository as an Actions secret, e.g.
+   **`FORGEJO_HELM_MIRROR_TOKEN`**. If the org requires approval for
+   fine-grained tokens, approve it under the org's Settings → Personal access
+   tokens → Pending requests.
 
 ## Adding a mirror
 
@@ -42,8 +51,9 @@ upstream are reproduced as-is — treat mirror repos as read-only.
 2. In that repo, **disable Actions** (Settings → Actions → General → Disable actions)
    so upstream CI files never run there. Optionally disable Issues/PRs and note
    "read-only mirror" in the description.
-3. Grant `MIRROR_TOKEN` access to the new repo (edit the token's repository list).
-4. Add an entry to `mirrors.json` and push.
+3. Make sure a token can push to it: either it's in an org whose token covers
+   all repositories, or create a new token/secret for its owner.
+4. Add an entry to `mirrors.json` (with `token_secret`) and push.
 5. Run the workflow manually (Actions → mirror → Run workflow) with `only` set
    to the new mirror's name to do the initial sync.
 
@@ -58,5 +68,5 @@ gh workflow run mirror.yml -f only=forgejo-helm
 
 ```bash
 diff <(git ls-remote https://code.forgejo.org/forgejo-helm/forgejo-helm.git | grep -v refs/pull/ | grep -v HEAD) \
-     <(git ls-remote https://github.com/joshtgl/forgejo-helm.git | grep -v HEAD)
+     <(git ls-remote https://github.com/forgejo-helm-mirror/forgejo-helm.git | grep -v HEAD)
 ```
