@@ -4,6 +4,7 @@
     "source": "codeberg.org/forgejo/forgejo",
     "target": "ghcr.io/mirror-forgejo/forgejo",
     "tags": "^(1[5-9]|[2-9][0-9]|[1-9][0-9]{2,})(\\.[0-9]+){0,2}(-rootless)?$",
+    "exclude": "^16\\.0\\.[0-2](-rootless)?$",
     "credentials_secret": "GHCR_MIRROR_TOKEN"
   }
 ]

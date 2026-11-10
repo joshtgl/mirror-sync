@@ -87,6 +87,7 @@ already up to date are skipped, and tags removed upstream are **not** deleted.
     "source": "codeberg.org/forgejo/forgejo",
     "target": "ghcr.io/mirror-forgejo/forgejo",
     "tags": "^(1[5-9]|[2-9][0-9]|[1-9][0-9]{2,})(\\.[0-9]+){0,2}(-rootless)?$",
+    "exclude": "^16\\.0\\.[0-2](-rootless)?$",
     "credentials_secret": "GHCR_MIRROR_TOKEN"
   }
 ]
@@ -98,6 +99,7 @@ already up to date are skipped, and tags removed upstream are **not** deleted.
 | `source`  | yes      | Source image repository, without tag (pulled anonymously). |
 | `target`  | yes      | Target image repository, without tag. The login registry is the part before the first `/`. |
 | `tags`    | no       | Extended regex (`grep -E`) selecting tags to mirror. Default `.*`. The example matches major 15 and up, with and without `-rootless`; raise the floor to drop old majors. |
+| `exclude` | no       | Extended regex of tags to leave out after `tags` is applied (e.g. upstream tags that are broken). |
 | `enabled` | no       | Set to `false` to pause an image mirror without removing it. |
 | `credentials_secret` | no | Name of the Actions secret holding the registry token. Default `GHCR_MIRROR_TOKEN`. |
 

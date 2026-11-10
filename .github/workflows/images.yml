@@ -32,6 +32,7 @@ jobs:
             map(select(.enabled != false))
             | map(select($only == "" or .name == $only))
             | map(.tags //= ".*")
+            | map(.exclude //= "")
             | map(.credentials_secret //= "GHCR_MIRROR_TOKEN")
           ' images.json)
           echo "Images: $matrix"
@@ -76,8 +77,12 @@ jobs:
           SOURCE: ${{ matrix.image.source }}
           TARGET: ${{ matrix.image.target }}
           TAGS: ${{ matrix.image.tags }}
+          EXCLUDE: ${{ matrix.image.exclude }}
         run: |
-          mapfile -t tags < <(regctl tag ls "$SOURCE" | grep -E "$TAGS" || true)
+          mapfile -t tags < <(
+            regctl tag ls "$SOURCE" | grep -E "$TAGS" \
+              | if [ -n "$EXCLUDE" ]; then grep -vE "$EXCLUDE"; else cat; fi || true
+          )
           if [ "${#tags[@]}" -eq 0 ]; then
             echo "::error::No tags in $SOURCE match $TAGS"
             exit 1
