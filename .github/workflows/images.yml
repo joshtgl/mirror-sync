@@ -1,0 +1,106 @@
+name: images
+
+on:
+  schedule:
+    - cron: '47 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Sync only the image with this name (blank = all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  REGCTL_VERSION: v0.11.7
+  REGCTL_SHA256: 3737fbbdd791e04e7a831640b681f3397a376498e80e2ad9b1b2d27296f239bc
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrix
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          matrix=$(jq -c --arg only "$ONLY" '
+            map(select(.enabled != false))
+            | map(select($only == "" or .name == $only))
+            | map(.tags //= ".*")
+            | map(.credentials_secret //= "GHCR_MIRROR_TOKEN")
+          ' images.json)
+          echo "Images: $matrix"
+          if [ "$matrix" = "[]" ]; then
+            echo "::error::No images selected"
+            exit 1
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  sync:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.plan.outputs.matrix) }}
+    concurrency: image-${{ matrix.image.name }}
+    name: sync (${{ matrix.image.name }})
+    steps:
+      - name: Install regctl
+        run: |
+          curl -fsSLo regctl \
+            "https://github.com/regclient/regclient/releases/download/${REGCTL_VERSION}/regctl-linux-amd64"
+          echo "${REGCTL_SHA256}  regctl" | sha256sum -c -
+          sudo install regctl /usr/local/bin/regctl
+
+      - name: Log in to target registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets[matrix.image.credentials_secret] }}
+          CREDENTIALS_SECRET: ${{ matrix.image.credentials_secret }}
+          TARGET: ${{ matrix.image.target }}
+        run: |
+          if [ -z "$REGISTRY_TOKEN" ]; then
+            echo "::error::Secret $CREDENTIALS_SECRET is not set"
+            exit 1
+          fi
+          printf '%s' "$REGISTRY_TOKEN" \
+            | regctl registry login "${TARGET%%/*}" -u x-access-token --pass-stdin
+
+      - name: Copy tags
+        env:
+          SOURCE: ${{ matrix.image.source }}
+          TARGET: ${{ matrix.image.target }}
+          TAGS: ${{ matrix.image.tags }}
+        run: |
+          mapfile -t tags < <(regctl tag ls "$SOURCE" | grep -E "$TAGS" || true)
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "::error::No tags in $SOURCE match $TAGS"
+            exit 1
+          fi
+          copied=0 skipped=0 failed=()
+          for tag in "${tags[@]}"; do
+            src=$(regctl image digest "$SOURCE:$tag") || { failed+=("$tag"); continue; }
+            # Missing target tag yields an empty digest, so it gets copied.
+            dst=$(regctl image digest "$TARGET:$tag" 2>/dev/null || true)
+            if [ "$src" = "$dst" ]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+            echo "Copying $tag ($src)"
+            # Copies the full multi-arch index, so digests match upstream.
+            if regctl image copy "$SOURCE:$tag" "$TARGET:$tag"; then
+              copied=$((copied + 1))
+            else
+              failed+=("$tag")
+            fi
+          done
+          echo "Copied $copied, skipped $skipped (up to date), failed ${#failed[@]}"
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::Failed tags: ${failed[*]}"
+            exit 1
+          fi

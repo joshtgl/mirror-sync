@@ -10,5 +10,11 @@
     "source": "https://code.forgejo.org/forgejo-helm/forgejo-runner.git",
     "target": "forgejo-helm-mirror/forgejo-runner",
     "token_secret": "FORGEJO_HELM_MIRROR_TOKEN"
+  },
+  {
+    "name": "forgejo",
+    "source": "https://codeberg.org/forgejo/forgejo.git",
+    "target": "mirror-forgejo/forgejo",
+    "token_secret": "MIRROR_FORGEJO_TOKEN"
   }
 ]
